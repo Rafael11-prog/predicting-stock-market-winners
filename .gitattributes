@@ -1,0 +1,2 @@
+data/raw/sp500_data.csv filter=lfs diff=lfs merge=lfs -text
+data/raw/sp500_pit_data.csv filter=lfs diff=lfs merge=lfs -text
