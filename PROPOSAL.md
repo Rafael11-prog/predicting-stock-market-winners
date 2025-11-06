@@ -1,79 +1,86 @@
 # PROPOSAL.md
 
 ## Project Title  
-**Global Market Dashboard – Real-Time Analysis and Visualization of Financial Markets**
+**Global Market Intelligence – Forecasting, Classification, and Risk Estimation on Equity Indices**
 
 ## Category  
 📊 *Data Analysis & Visualization*  
+🧠 *Statistical & Machine Learning Forecasting*  
 📈 *Business & Finance Tools*
 
 ---
 
 ## Problem Statement / Motivation  
 
-Financial information is highly fragmented across different sources, APIs, and news platforms.  
-As a result, understanding the real-time performance of global markets (such as the S&P 500, CAC 40, and NASDAQ) requires switching between multiple websites and manually interpreting raw data.  
+Financial markets are highly dynamic, and predicting short-term movements remains one of the biggest challenges in data science.  
+The goal of this project is to build a **data-driven framework** capable of analyzing and forecasting the short-term performance and risk of major equity indices such as the **S&P 500** and **CAC 40**.  
 
-This project aims to create a **Python-based financial dashboard** that provides a clean, consolidated, and interactive view of major stock indices and their top-performing assets.  
-It will enable users — students, analysts, or investors — to quickly visualize market trends, identify outperformers, and monitor changes throughout the day.  
+More specifically, this project aims to:
+1. **Forecast** 1-day and 5-day index returns using time series models (ARIMA, ETS) and benchmark them against naïve models.  
+2. **Classify** stocks that are likely to be among the **top performers** the next day using historical features such as momentum, volatility, and volume anomalies.  
+3. **Estimate risk** via a one-day **Value-at-Risk (VaR)** using different approaches (Historical Simulation, Variance-Covariance, Cornish-Fisher expansion) and validate them with **backtesting**.  
 
-The motivation comes from a genuine interest in finance and technology: combining data analysis, programming, and financial understanding to build a tool that mirrors professional market terminals (like Bloomberg or Yahoo Finance) but remains lightweight and educational.
+An interactive **Streamlit dashboard** will serve as a front-end interface to visualize results, forecasts, classification outcomes, and risk analytics in an intuitive way.
 
 ---
 
 ## Planned Approach and Technologies  
 
-The system will consist of a modular Python application with the following components:
+**Data Acquisition & Preparation:**  
+- Download historical prices and volumes for S&P 500 and CAC 40 constituents using `yfinance`.  
+- Clean and align data with `pandas` and handle missing values, splits, and outliers.
 
-- **Data Collection:**  
-  Fetch live and historical stock data from public APIs (such as YahooFinance or Alpha Vantage) using `yfinance` and `requests`.  
+**Feature Engineering:**  
+- Compute log returns, realized volatility, 5-day and 20-day momentum, normalized trading volume, SMA/EMA gaps, and calendar dummies (day of week, end-of-month).  
+- Label future performance (Top-Decile returns) for supervised learning.
 
-- **Data Processing:**  
-  Clean, aggregate, and compute financial indicators with `pandas` and `numpy` (daily returns, volatility, and ranking of top gainers/losers).  
+**Modeling Components:**  
+- **Forecasting:** Use `statsmodels` ARIMA/ETS models and evaluate against a random-walk baseline.  
+- **Classification:** Use `scikit-learn` models (Logistic Regression, Random Forest, Gradient Boosting) with walk-forward validation (`TimeSeriesSplit`).  
+- **Risk Estimation:** Compute 1-day VaR using Historical, Variance-Covariance, and Cornish-Fisher methods, and assess accuracy through backtesting (exception rate vs. confidence level).
 
-- **Visualization:**  
-  Create dynamic visualizations using `matplotlib`, `seaborn`, and `plotly` for interactive charts (price evolution, distribution, and heatmaps).  
+**Evaluation Metrics:**  
+- Forecasting → RMSE, MAE, MAPE  
+- Classification → Precision@K, ROC-AUC, PR-AUC, confusion matrix  
+- Risk → Coverage rate (exceptions close to α), stability over time  
 
-- **Dashboard Interface:**  
-  Build an intuitive user interface using `streamlit`, allowing real-time exploration of markets, index summaries, and stock-specific pages.  
-
-- **Code Quality & Testing:**  
-  Follow PEP8 standards, type hints, and use `pytest` for unit and integration tests.  
-  Implement caching and error handling to ensure stable performance under API rate limits.
-
-The repository will include complete documentation, examples, and a test suite for reproducibility.
+**Visualization / Dashboard:**  
+- Implement a **Streamlit** dashboard with three main tabs:  
+  1. *Forecasts* – ARIMA/ETS predictions with fan charts and performance table.  
+  2. *Stock Selection* – Predicted vs. realized Top-K performers and Precision@K visualization.  
+  3. *Risk Analytics* – VaR computation and backtesting results.  
 
 ---
 
 ## Expected Challenges  
 
-- API rate limits and incomplete data handling.  
-- Maintaining near real-time updates without excessive API calls.  
-- Designing efficient data structures for fast analysis and visualization.  
-- Keeping the dashboard responsive and user-friendly while ensuring modular and testable code.  
+- Preventing **data leakage** and maintaining strict chronological separation.  
+- Managing **imbalanced labels** (few top performers).  
+- Ensuring **robustness** of time series models in volatile periods.  
+- Optimizing dashboard responsiveness and caching data efficiently.  
 
 ---
 
 ## Success Criteria  
 
-- The dashboard successfully displays up-to-date summaries for at least two indices (S&P 500 and CAC 40).  
-- Users can view top gainers/losers and visualize price evolution for selected stocks.  
-- All data manipulation and visualization logic are implemented in Python.  
-- The code passes all tests, follows PEP8 standards, and is well documented.  
+- Forecasting models outperform the naïve baseline on MAE/RMSE.  
+- Classifiers identify top movers with significantly better Precision@K than random selection.  
+- VaR models maintain exception rates close to nominal α levels (e.g., 1% or 5%).  
+- All code is modular, tested, and documented (PEP8, docstrings, pytest).  
+- Interactive dashboard cleanly presents model outputs and insights.  
 
 ---
 
 ## Stretch Goals  
 
-- Add a **correlation heatmap** between major stocks or sectors.  
-- Implement **portfolio tracking** and performance comparison over time.  
-- Introduce **WebSocket streaming** for true live price updates.  
-- Deploy the dashboard online (e.g., via Streamlit Cloud or Docker).  
+- Regime classification with volatility-based clustering (K-means).  
+- Rolling CAPM estimation (dynamic betas) as an additional feature.  
+- Backtest of a simple “Top-K strategy” with transaction costs.  
+- Deployment on Streamlit Cloud or Docker for live demonstration.  
 
 ---
 
-**Estimated Length:** ~1,000+ lines of Python code  
 **Language:** Python 3.10+  
-**Main Libraries:** `pandas`, `numpy`, `matplotlib`, `seaborn`, `plotly`, `streamlit`, `yfinance`, `pytest`
-
----
+**Libraries:** `pandas`, `numpy`, `matplotlib`, `seaborn`, `plotly`, `yfinance`, `statsmodels`, `scikit-learn`, `scipy`, `pytest`, `streamlit`  
+**Estimated Code Length:** ~1,000+ lines  
+**Deliverables:** Forecasting, Classification, and Risk modules + Streamlit Dashboard  
