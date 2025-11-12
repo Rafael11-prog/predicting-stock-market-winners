@@ -1,86 +1,106 @@
 # PROPOSAL.md
 
 ## Project Title  
-**Global Market Intelligence – Forecasting, Classification, and Risk Estimation on Equity Indices**
+**Predicting Tomorrow’s Stock Market Winners – A Machine Learning Approach to Daily Top Performer Classification**
 
 ## Category  
-📊 *Data Analysis & Visualization*  
-🧠 *Statistical & Machine Learning Forecasting*  
-📈 *Business & Finance Tools*
+🧠 *Machine Learning & Data Science*  
+📊 *Financial Data Analysis*  
 
 ---
 
 ## Problem Statement / Motivation  
 
-Financial markets are highly dynamic, and predicting short-term movements remains one of the biggest challenges in data science.  
-The goal of this project is to build a **data-driven framework** capable of analyzing and forecasting the short-term performance and risk of major equity indices such as the **S&P 500** and **CAC 40**.  
+Predicting short-term stock movements is one of the most challenging and fascinating problems in data science.  
+This project aims to identify which stocks within a major index (such as the S&P 500 or CAC 40) are most likely to **outperform the market on the next trading day**.  
 
-More specifically, this project aims to:
-1. **Forecast** 1-day and 5-day index returns using time series models (ARIMA, ETS) and benchmark them against naïve models.  
-2. **Classify** stocks that are likely to be among the **top performers** the next day using historical features such as momentum, volatility, and volume anomalies.  
-3. **Estimate risk** via a one-day **Value-at-Risk (VaR)** using different approaches (Historical Simulation, Variance-Covariance, Cornish-Fisher expansion) and validate them with **backtesting**.  
+Instead of focusing on visualization or risk reporting, this work will emphasize **model estimation, feature engineering, and predictive performance** — the core elements of applied data science.  
 
-An interactive **Streamlit dashboard** will serve as a front-end interface to visualize results, forecasts, classification outcomes, and risk analytics in an intuitive way.
+The task will be formulated as a **binary classification problem**:
+> Will this stock be among the top 10% performers tomorrow (1) or not (0)?
+
+By developing and comparing machine learning models, the project seeks to understand how technical indicators and short-term market signals can help anticipate daily winners.
 
 ---
 
 ## Planned Approach and Technologies  
 
-**Data Acquisition & Preparation:**  
-- Download historical prices and volumes for S&P 500 and CAC 40 constituents using `yfinance`.  
-- Clean and align data with `pandas` and handle missing values, splits, and outliers.
+### 1. Data Collection  
+- Historical price and volume data will be retrieved using `yfinance` for all components of the S&P 500 (or CAC 40).  
+- The time range will cover multiple years (e.g., 2015–2025) to include different market conditions.  
+- Data will be stored locally in `parquet` or `csv` format for reproducibility.
 
-**Feature Engineering:**  
-- Compute log returns, realized volatility, 5-day and 20-day momentum, normalized trading volume, SMA/EMA gaps, and calendar dummies (day of week, end-of-month).  
-- Label future performance (Top-Decile returns) for supervised learning.
+### 2. Feature Engineering  
+Each stock-day observation will be transformed into a set of explanatory variables, including:  
+- **Returns:** 1-day, 5-day, and lagged returns  
+- **Momentum indicators:** Simple and Exponential Moving Averages (SMA, EMA), RSI, MACD  
+- **Volatility measures:** Rolling standard deviation, realized volatility  
+- **Volume-related features:** Volume z-scores, turnover ratios  
+- **Calendar dummies:** Day-of-week, end-of-month effects  
+- **Relative performance:** Return compared to index average  
 
-**Modeling Components:**  
-- **Forecasting:** Use `statsmodels` ARIMA/ETS models and evaluate against a random-walk baseline.  
-- **Classification:** Use `scikit-learn` models (Logistic Regression, Random Forest, Gradient Boosting) with walk-forward validation (`TimeSeriesSplit`).  
-- **Risk Estimation:** Compute 1-day VaR using Historical, Variance-Covariance, and Cornish-Fisher methods, and assess accuracy through backtesting (exception rate vs. confidence level).
+The target variable will be binary:  
+\[
+y_t = 
+\begin{cases} 
+1 & \text{if next-day return is in top 10% of all stocks} \\
+0 & \text{otherwise}
+\end{cases}
+\]
 
-**Evaluation Metrics:**  
-- Forecasting → RMSE, MAE, MAPE  
-- Classification → Precision@K, ROC-AUC, PR-AUC, confusion matrix  
-- Risk → Coverage rate (exceptions close to α), stability over time  
+### 3. Modeling  
+The following models will be implemented and compared:
+- **Baseline:** Logistic Regression  
+- **Tree-based models:** Random Forest, Gradient Boosting (XGBoost or LightGBM)  
+- **Regularization and hyperparameter tuning:** GridSearchCV with `TimeSeriesSplit`  
+- Optional stretch: simple neural network with `Keras`  
 
-**Visualization / Dashboard:**  
-- Implement a **Streamlit** dashboard with three main tabs:  
-  1. *Forecasts* – ARIMA/ETS predictions with fan charts and performance table.  
-  2. *Stock Selection* – Predicted vs. realized Top-K performers and Precision@K visualization.  
-  3. *Risk Analytics* – VaR computation and backtesting results.  
+Each model will be trained in a **walk-forward (rolling) manner** to respect the temporal nature of financial data and avoid look-ahead bias.
+
+### 4. Evaluation Metrics  
+Performance will be assessed through:
+- **Precision@K:** fraction of true top performers among the K predicted highest probabilities  
+- **ROC-AUC & PR-AUC:** to measure general classification quality  
+- **Cumulative gain analysis:** optional, to show potential practical impact of top-K strategy  
+
+Feature importance and Shapley values will also be analyzed to interpret which indicators contribute most to the prediction.
 
 ---
 
 ## Expected Challenges  
-
-- Preventing **data leakage** and maintaining strict chronological separation.  
-- Managing **imbalanced labels** (few top performers).  
-- Ensuring **robustness** of time series models in volatile periods.  
-- Optimizing dashboard responsiveness and caching data efficiently.  
+- Managing **non-stationary and noisy financial data**.  
+- Handling **class imbalance** (only ~10% of positive labels).  
+- Preventing **data leakage** through proper time-aware validation.  
+- Ensuring **model interpretability** and avoiding overfitting.  
 
 ---
 
 ## Success Criteria  
-
-- Forecasting models outperform the naïve baseline on MAE/RMSE.  
-- Classifiers identify top movers with significantly better Precision@K than random selection.  
-- VaR models maintain exception rates close to nominal α levels (e.g., 1% or 5%).  
-- All code is modular, tested, and documented (PEP8, docstrings, pytest).  
-- Interactive dashboard cleanly presents model outputs and insights.  
+- Models achieve significantly higher Precision@K and ROC-AUC than random or naïve baselines.  
+- The feature engineering process is clearly documented and reproducible.  
+- The methodology demonstrates rigorous application of machine learning concepts (train/test splits, cross-validation, evaluation).  
+- Results are interpretable and well presented in the final report.  
 
 ---
 
 ## Stretch Goals  
-
-- Regime classification with volatility-based clustering (K-means).  
-- Rolling CAPM estimation (dynamic betas) as an additional feature.  
-- Backtest of a simple “Top-K strategy” with transaction costs.  
-- Deployment on Streamlit Cloud or Docker for live demonstration.  
+- Analyze how feature importance or model performance changes across market regimes (bull vs. bear).  
+- Extend to multi-day horizons (e.g., Top 10% over 5-day returns).  
+- Compare multiple indices (S&P 500 vs. CAC 40).  
 
 ---
 
+## Technical Summary  
 **Language:** Python 3.10+  
-**Libraries:** `pandas`, `numpy`, `matplotlib`, `seaborn`, `plotly`, `yfinance`, `statsmodels`, `scikit-learn`, `scipy`, `pytest`, `streamlit`  
-**Estimated Code Length:** ~1,000+ lines  
-**Deliverables:** Forecasting, Classification, and Risk modules + Streamlit Dashboard  
+**Main Libraries:** `pandas`, `numpy`, `scikit-learn`, `xgboost`, `matplotlib`, `seaborn`, `yfinance`, `ta`, `shap`, `pytest`  
+**Estimated Code Length:** ~1,000 lines  
+**Deliverables:**  
+- Data preprocessing and feature engineering scripts  
+- Machine learning models and evaluation notebooks  
+- Analytical report and performance summary  
+
+---
+
+**Author:** Rafael Machado Cerqueira  
+**Institution:** HEC Lausanne  
+**Date:** November 2025
