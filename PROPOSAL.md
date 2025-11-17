@@ -1,99 +1,121 @@
 # PROPOSAL.md
 
-## Project Title  
-**Predicting Tomorrow’s Stock Market Winners – A Machine Learning Approach to Daily Top Performer Classification**
+## Project Title
+**Predicting Tomorrow’s Stock Market Winners – A Machine Learning Approach to Cross-Sectional Outperformance Classification**
 
-## Category  
-🧠 *Machine Learning & Data Science*  
-📊 *Financial Data Analysis*  
-
----
-
-## Problem Statement / Motivation  
-
-Predicting short-term stock movements is one of the most challenging and fascinating problems in data science.  
-This project aims to identify which stocks within a major index (such as the S&P 500 or CAC 40) are most likely to **outperform the market on the next trading day**.  
-
-Instead of focusing on visualization or risk reporting, this work will emphasize **model estimation, feature engineering, and predictive performance** — the core elements of applied data science.  
-
-The task will be formulated as a **binary classification problem**:
-> Will this stock be among the top 10% performers tomorrow (1) or not (0)?
-
-By developing and comparing machine learning models, the project seeks to understand how technical indicators and short-term market signals can help anticipate daily winners.
+## Category
+📊 *Data Analysis & Machine Learning*
+💼 *Business & Finance Tools*
 
 ---
 
-## Planned Approach and Technologies  
+## Problem Statement / Motivation
 
-### 1. Data Collection  
-- Historical price and volume data will be retrieved using `yfinance` for all components of the S&P 500 (or CAC 40).  
-- The time range will cover multiple years (e.g., 2015–2025) to include different market conditions.  
-- Data will be stored locally in `parquet` or `csv` format for reproducibility.
+Predicting short-term stock movements is one of the most difficult and theoretically constrained tasks in empirical finance.
 
-### 2. Feature Engineering  
-Each stock-day observation will be transformed into a set of explanatory variables, including:  
-- **Returns:** 1-day, 5-day, and lagged returns  
-- **Momentum indicators:** Simple and Exponential Moving Averages (SMA, EMA), RSI, MACD  
-- **Volatility measures:** Rolling standard deviation, realized volatility  
-- **Volume-related features:** Volume z-scores, turnover ratios  
-- **Calendar dummies:** Day-of-week, end-of-month effects  
-- **Relative performance:** Return compared to index average  
+This project aims to determine which stocks among the **historical S&P 500 constituents** are most likely to outperform the cross-section of the index on the next trading day.
 
-The target variable will be binary:  
-\[
-y_t = 
-\begin{cases} 
-1 & \text{if next-day return is in top 10% of all stocks} \\
-0 & \text{otherwise}
-\end{cases}
-\]
-
-### 3. Modeling  
-The following models will be implemented and compared:
-- **Baseline:** Logistic Regression  
-- **Tree-based models:** Random Forest, Gradient Boosting (XGBoost or LightGBM)  
-- **Regularization and hyperparameter tuning:** GridSearchCV with `TimeSeriesSplit`  
-- Optional stretch: simple neural network with `Keras`  
-
-Each model will be trained in a **walk-forward (rolling) manner** to respect the temporal nature of financial data and avoid look-ahead bias.
-
-### 4. Evaluation Metrics  
-Performance will be assessed through:
-- **Precision@K:** fraction of true top performers among the K predicted highest probabilities  
-- **ROC-AUC & PR-AUC:** to measure general classification quality  
-- **Cumulative gain analysis:** optional, to show potential practical impact of top-K strategy  
-
-Feature importance and Shapley values will also be analyzed to interpret which indicators contribute most to the prediction.
+Following the professor’s feedback, this proposal now:
+- Uses **historical S&P 500 constituents** to avoid survivorship bias.
+- Includes **fundamental data** (P/E, P/B, ROE, D/E, margins, EPS growth, market cap).
+- Predicts **Top-50% next-day performers** instead of Top-10%, making the target economically meaningful.
+- Keeps Top-10% only as an optional robustness extension.
 
 ---
 
-## Expected Challenges  
-- Managing **non-stationary and noisy financial data**.  
-- Handling **class imbalance** (only ~10% of positive labels).  
-- Preventing **data leakage** through proper time-aware validation.  
-- Ensuring **model interpretability** and avoiding overfitting.  
+## Planned Approach and Technologies
+
+### 1. Data Collection
+- Daily OHLCV market data via `yfinance`
+- **Historical S&P 500 membership data** (no survivorship bias)
+- Time range: 2015–2025
+- Fundamental variables:
+  - P/E, P/B
+  - ROE, Gross margin
+  - Debt-to-Equity
+  - EPS growth
+  - Market capitalization
 
 ---
 
-## Success Criteria  
-- Models achieve significantly higher Precision@K and ROC-AUC than random or naïve baselines.  
-- The feature engineering process is clearly documented and reproducible.  
-- The methodology demonstrates rigorous application of machine learning concepts (train/test splits, cross-validation, evaluation).  
-- Results are interpretable and well presented in the final report.  
+### 2. Feature Engineering
+
+#### Technical Indicators
+- 1-day, 5-day, 20-day returns  
+- Rolling volatility (10-day, 20-day)  
+- SMA, EMA, RSI, MACD  
+- Volume indicators  
+- Calendar effects  
+
+#### Fundamental Indicators
+- P/E, P/B  
+- ROE  
+- Debt-to-Equity  
+- EPS growth  
+- Profit margins  
+- Market capitalization  
 
 ---
 
-## Stretch Goals  
-- Analyze how feature importance or model performance changes across market regimes (bull vs. bear).  
-- Extend to multi-day horizons (e.g., Top 10% over 5-day returns).  
-- Compare multiple indices (S&P 500 vs. CAC 40).  
+### 3. Target Variable
+
+**Primary target:**  
+Top-50% next-day performer  
+*(return ≥ cross-sectional median)*
+
+**Secondary (optional):**  
+Top-10% next-day performer  
+*(robustness check only)*
 
 ---
 
-## Technical Summary  
+### 4. Models and Methods
+- Logistic Regression  
+- Random Forest  
+- XGBoost  
+- Rolling **TimeSeriesSplit** for training/validation  
+
+---
+
+### 5. Evaluation Metrics
+- **Precision@K**
+- **ROC-AUC**
+- **PR-AUC**
+- **Accuracy**
+- Feature importance & SHAP values
+
+---
+
+## Expected Challenges
+- Noisy and non-stationary financial data  
+- Matching low-frequency fundamentals with daily prices  
+- Maintaining correct historical index membership  
+- Avoiding data leakage  
+- Class imbalance (Top-10% variant)
+
+---
+
+## Success Criteria
+- Models outperform naive baselines  
+- Clean, reproducible feature engineering pipeline  
+- Correct time-series ML methodology  
+- Interpretability using SHAP or feature importance  
+
+---
+
+## Stretch Goals
+- Regime-based analysis (bull vs bear)  
+- Multi-day prediction horizon  
+- Integration of macroeconomic variables  
+
+---
+
+## Technical Summary
 **Language:** Python 3.10+  
 **Main Libraries:** `pandas`, `numpy`, `scikit-learn`, `xgboost`, `matplotlib`, `seaborn`, `yfinance`, `ta`, `shap`, `pytest`  
+
 **Estimated Code Length:** ~1,000 lines  
+
 **Deliverables:**  
 - Data preprocessing and feature engineering scripts  
 - Machine learning models and evaluation notebooks  
@@ -103,4 +125,3 @@ Feature importance and Shapley values will also be analyzed to interpret which i
 
 **Author:** Rafael Machado Cerqueira  
 **Institution:** HEC Lausanne  
-**Date:** November 2025
