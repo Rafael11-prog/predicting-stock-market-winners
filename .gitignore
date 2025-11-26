@@ -1,0 +1,21 @@
+# Fichiers système
+.DS_Store
+
+# Caches Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Checkpoints Jupyter
+**/.ipynb_checkpoints/
+
+# Données brutes et datasets lourds
+data/raw/
+data/*.parquet
+
+# Résultats (plots, SHAP, etc.)
+results/
+
+# Fichiers système
+.DS_Store

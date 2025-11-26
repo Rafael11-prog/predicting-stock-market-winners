@@ -1,0 +1,17 @@
+annotated-types @ file:///work/perseverance-python-buildout/croot/annotated-types_1728386958747/work
+importlib_metadata @ file:///home/conda/feedstock_root/build_artifacts/bld/rattler-build_importlib-metadata_1747934053/work
+matplotlib==3.10.3
+matplotlib-inline @ file:///home/conda/feedstock_root/build_artifacts/matplotlib-inline_1733416936468/work
+multitasking==0.0.12
+numpy @ file:///home/conda/feedstock_root/build_artifacts/bld/rattler-build_numpy_1752612967/work/dist/numpy-2.3.1-cp313-cp313-linux_x86_64.whl#sha256=5615ede4bf83a5b9e9756ad5ee44f1db575600653f1684fc7531c1d68e23c880
+pandas @ file:///home/conda/feedstock_root/build_artifacts/pandas_1752081722123/work
+pyarrow==21.0.0
+scikit-learn @ file:///home/conda/feedstock_root/build_artifacts/scikit-learn_1752825732222/work/dist/scikit_learn-1.7.1-cp313-cp313-linux_x86_64.whl#sha256=15ce9932a0a7a574b2ea85aefe5001d0f9b2227822a7d0a5bb86f6c806b62c61
+seaborn==0.13.2
+shap==0.50.0
+stack_data @ file:///home/conda/feedstock_root/build_artifacts/stack_data_1733569443808/work
+ta==0.11.0
+tzdata @ file:///home/conda/feedstock_root/build_artifacts/python-tzdata_1742745135198/work
+xgboost==3.1.1
+yfinance==0.2.66
+zstandard==0.23.0
