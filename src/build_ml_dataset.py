@@ -1,66 +1,88 @@
 from pathlib import Path
+from typing import List, Tuple
+
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import roc_auc_score, classification_report
 
+# -------------------------------------------------------------------
+# Paths
+# -------------------------------------------------------------------
 PANEL_FILE = Path("data/sp500_panel_with_fundamentals.parquet")
 OUT_DATA_FILE = Path("data/sp500_ml_dataset.parquet")
 
 
-def load_panel():
-    df = pd.read_parquet(PANEL_FILE)
-    print("Panel avec fondamentaux :", df.shape)
+# -------------------------------------------------------------------
+# Data loading
+# -------------------------------------------------------------------
+def load_panel() -> pd.DataFrame:
+    """
+    Load the price + fundamentals panel and apply a date filter.
 
-    # Filtre période (à adapter si tu veux)
+    Returns
+    -------
+    pd.DataFrame
+        Panel sorted by (Ticker, Date) and restricted to the desired period.
+    """
+    df = pd.read_parquet(PANEL_FILE)
+    print(f"[INFO] Panel with fundamentals loaded: {df.shape}")
+
+    # Date filter (can be adapted if needed)
     df = df[(df["Date"] >= "2018-01-01") & (df["Date"] <= "2024-12-31")].copy()
     df = df.sort_values(["Ticker", "Date"])
-    print("Panel filtré :", df.shape)
+    print(f"[INFO] Filtered panel: {df.shape}")
     return df
 
 
+# -------------------------------------------------------------------
+# Targets
+# -------------------------------------------------------------------
 def add_target(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Crée quatre cibles de classification :
+    Create four classification targets based on forward returns.
 
-    - target_1d_top50 : ret_1d_ahead > médiane cross-sectionnelle (top 50%)
-    - target_5d_top50 : ret_5d_ahead > médiane cross-sectionnelle (top 50%)
+    For each date, we build cross-sectional labels:
+    - target_1d_top50 : ret_1d_ahead > cross-sectional median  (top 50%)
+    - target_5d_top50 : ret_5d_ahead > cross-sectional median  (top 50%)
+    - target_1d_top10 : ret_1d_ahead > cross-sectional 90th pct (top 10%)
+    - target_5d_top10 : ret_5d_ahead > cross-sectional 90th pct (top 10%)
 
-    - target_1d_top10 : ret_1d_ahead > 90e percentile cross-sectionnel (top 10%)
-    - target_5d_top10 : ret_5d_ahead > 90e percentile cross-sectionnel (top 10%)
+    Returns
+    -------
+    pd.DataFrame
+        Input dataframe with new target and forward-return columns.
     """
 
-    # ---------- Rendement 1 jour à l'avance ----------
+    # ---------- 1-day ahead return ----------
     df["ret_1d_ahead"] = (
         df.groupby("Ticker")["Adj Close"]
-          .pct_change(1)
-          .shift(-1)
+        .pct_change(1)
+        .shift(-1)
     )
     df["ret_1d_ahead"] = df["ret_1d_ahead"].replace([np.inf, -np.inf], np.nan)
 
-    # Top 50% (médiane par date)
+    # Top 50% (median by date)
     median_1d = df.groupby("Date")["ret_1d_ahead"].transform("median")
     df["target_1d_top50"] = (df["ret_1d_ahead"] > median_1d).astype(int)
 
-    # Top 10% (90e percentile par date)
+    # Top 10% (90th percentile by date)
     q90_1d = df.groupby("Date")["ret_1d_ahead"].transform(
         lambda s: s.quantile(0.90)
     )
     df["target_1d_top10"] = (df["ret_1d_ahead"] > q90_1d).astype(int)
 
-    # ---------- Rendement 5 jours à l'avance ----------
+    # ---------- 5-day ahead return ----------
     df["ret_5d_ahead"] = (
         df.groupby("Ticker")["Adj Close"]
-          .pct_change(5)
-          .shift(-5)
+        .pct_change(5)
+        .shift(-5)
     )
     df["ret_5d_ahead"] = df["ret_5d_ahead"].replace([np.inf, -np.inf], np.nan)
 
-    # Top 50% (médiane par date)
+    # Top 50% (median by date)
     median_5d = df.groupby("Date")["ret_5d_ahead"].transform("median")
     df["target_5d_top50"] = (df["ret_5d_ahead"] > median_5d).astype(int)
 
-    # Top 10% (90e percentile par date)
+    # Top 10% (90th percentile by date)
     q90_5d = df.groupby("Date")["ret_5d_ahead"].transform(
         lambda s: s.quantile(0.90)
     )
@@ -69,26 +91,29 @@ def add_target(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+# -------------------------------------------------------------------
+# Price-based features
+# -------------------------------------------------------------------
 def add_price_features(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Ajoute les features basées sur les prix :
-    - rendements (1d, 5d, 20d)
-    - volatilité rolling (20d, 60d)
-    - moyennes mobiles / position vs MA
-    - EMA (10, 20, 50)
+    Add price-based technical features:
+
+    - Returns: 1d, 5d, 20d
+    - Rolling volatility (20d, 60d) on 1d returns
+    - Simple moving averages (10, 50) and price / MA ratios
+    - Exponential moving averages (10, 20, 50)
     - RSI(14)
     - MACD (12-26-9)
-    - volume z-score
+    - Volume z-score per ticker
     """
-
     g = df.groupby("Ticker")
 
-    # ---------- rendements ----------
+    # ---------- Returns ----------
     df["ret_1d"] = g["Adj Close"].pct_change(1)
     df["ret_5d"] = g["Adj Close"].pct_change(5)
     df["ret_20d"] = g["Adj Close"].pct_change(20)
 
-    # ---------- volatilité (rolling std des ret_1d) ----------
+    # ---------- Volatility (rolling std of 1d returns) ----------
     df["vol_20d"] = (
         g["ret_1d"].rolling(20).std().reset_index(level=0, drop=True)
     )
@@ -96,7 +121,7 @@ def add_price_features(df: pd.DataFrame) -> pd.DataFrame:
         g["ret_1d"].rolling(60).std().reset_index(level=0, drop=True)
     )
 
-    # ---------- moyennes mobiles simples ----------
+    # ---------- Simple moving averages ----------
     ma10 = g["Adj Close"].rolling(10).mean().reset_index(level=0, drop=True)
     ma50 = g["Adj Close"].rolling(50).mean().reset_index(level=0, drop=True)
     df["ma10"] = ma10
@@ -104,7 +129,7 @@ def add_price_features(df: pd.DataFrame) -> pd.DataFrame:
     df["price_vs_ma10"] = df["Adj Close"] / ma10
     df["price_vs_ma50"] = df["Adj Close"] / ma50
 
-    # ---------- EMA (10 / 20 / 50) ----------
+    # ---------- Exponential moving averages ----------
     df["ema10"] = g["Adj Close"].transform(
         lambda s: s.ewm(span=10, adjust=False).mean()
     )
@@ -146,27 +171,33 @@ def add_price_features(df: pd.DataFrame) -> pd.DataFrame:
     )
     df["macd_hist"] = df["macd_line"] - df["macd_signal"]
 
-    # ---------- volume normalisé (z-score par titre) ----------
+    # ---------- Volume z-score ----------
+    # Note: column name is "Volume " (with a trailing space) in the raw data.
     vol_mean = g["Volume "].transform("mean")
     vol_std = g["Volume "].transform("std")
     df["volume_z"] = (df["Volume "] - vol_mean) / vol_std
 
     return df
 
+
+# -------------------------------------------------------------------
+# Fundamental features
+# -------------------------------------------------------------------
 def add_fundamental_features(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Ajoute les features fondamentales :
-    - size (log Market Cap)
+    Add fundamental features:
+
+    - Size (log market cap)
     - PE, PB, PS, Dividend Yield
-    - EBITDA / MarketCap
-    - position dans le range 52 semaines
-    - earnings_yield, book_to_price, sales_to_price
-    - proxies de ROE, Debt/Equity, EPS growth
-    - z-scores sectoriels
-    - rangs globaux
+    - EBITDA / Market Cap
+    - 52-week range position
+    - Value signals: earnings_yield, book_to_price, sales_to_price
+    - Proxies for ROE, Debt/Equity, EPS growth
+    - Sector-level z-scores
+    - Global ranks (size/value style signals)
     """
 
-    # ---------- colonnes de base ----------
+    # ---------- Basic columns ----------
     df["log_mktcap"] = np.log(df["Market Cap"].replace({0: np.nan}))
 
     df["pe"] = df["Price/Earnings"]
@@ -181,7 +212,7 @@ def add_fundamental_features(df: pd.DataFrame) -> pd.DataFrame:
         (df["Adj Close"] - df["52 Week Low"]) / df["52w_range"]
     )
 
-    # ---------- signaux "value" ----------
+    # ---------- Value signals ----------
     df["earnings_yield"] = 1.0 / df["pe"]
     df["book_to_price"] = 1.0 / df["pb"]
     df["sales_to_price"] = 1.0 / df["ps"]
@@ -189,22 +220,24 @@ def add_fundamental_features(df: pd.DataFrame) -> pd.DataFrame:
     for col in ["earnings_yield", "book_to_price", "sales_to_price"]:
         df[col] = df[col].replace([np.inf, -np.inf], np.nan)
 
-    # ---------- proxies ROE / Debt-to-Equity / EPS growth ----------
+    # ---------- Proxies for ROE / D/E / EPS growth ----------
     df["eps"] = df["Earnings/Share"]
 
-    # book value per share approximé via PB
+    # Approximate book value per share via PB
     df["book_value_per_share"] = df["Adj Close"] / df["pb"]
     df["roe_proxy"] = df["eps"] / df["book_value_per_share"]
 
-    # proxy simple de D/E : quand PB est largement >1, on suppose plus de levier
+    # Very crude proxy for D/E: large PB often means more leverage
     df["debt_to_equity_proxy"] = (df["pb"] - 1).clip(lower=0)
 
-    # proxy de croissance du bénéfice par action (EPS growth)
+    # EPS growth proxy (time-series, per ticker)
     df["eps_growth_proxy"] = (
-        df.groupby("Ticker")["eps"].pct_change().replace([np.inf, -np.inf], np.nan)
+        df.groupby("Ticker")["eps"]
+        .pct_change()
+        .replace([np.inf, -np.inf], np.nan)
     )
 
-    # ---------- z-scores par secteur ----------
+    # ---------- Sector-level z-scores ----------
     sector_group = df.groupby("Sector")
 
     def sector_z(col_name: str) -> pd.Series:
@@ -219,34 +252,51 @@ def add_fundamental_features(df: pd.DataFrame) -> pd.DataFrame:
     df["ps_sector_z"] = sector_z("ps")
     df["ebitda_mktcap_sector_z"] = sector_z("ebitda_to_mktcap")
 
-    # ---------- rangs globaux ----------
+    # ---------- Global ranks ----------
     df["mktcap_rank"] = df["log_mktcap"].rank(method="average")
-    df["pe_rank"] = df["pe"].rank(ascending=True, method="average")   # low PE = value
+    # low PE = more value-like
+    df["pe_rank"] = df["pe"].rank(ascending=True, method="average")
     df["pb_rank"] = df["pb"].rank(ascending=True, method="average")
-    df["value_rank"] = df["earnings_yield"].rank(ascending=False, method="average")
+    df["value_rank"] = df["earnings_yield"].rank(
+        ascending=False,
+        method="average",
+    )
 
     return df
 
+
+# -------------------------------------------------------------------
+# Calendar features
+# -------------------------------------------------------------------
 def add_calendar_features(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Ajoute les effets calendaires :
-    - day_of_week (0=lundi, ..., 4=vendredi)
-    - month (1-12)
-    - dummies fin de mois / fin de trimestre
-    """
+    Add calendar / seasonality features:
 
+    - day_of_week (0=Monday, ..., 4=Friday)
+    - month (1-12)
+    - month-end and quarter-end dummy variables
+    """
     df["day_of_week"] = df["Date"].dt.dayofweek
     df["month"] = df["Date"].dt.month
     df["is_month_end"] = df["Date"].dt.is_month_end.astype(int)
     df["is_quarter_end"] = df["Date"].dt.is_quarter_end.astype(int)
-
     return df
 
 
+# -------------------------------------------------------------------
+# Dataset builder
+# -------------------------------------------------------------------
+def build_dataset() -> Tuple[pd.DataFrame, List[str]]:
+    """
+    Build the final ML dataset (features + 1d/5d targets).
 
-def build_dataset() -> pd.DataFrame:
-    """Construit le dataset ML (features + targets 1d et 5d)."""
-
+    Returns
+    -------
+    df : pd.DataFrame
+        Cleaned ML dataset with targets and features.
+    feature_cols : list of str
+        Names of feature columns (used later in the models).
+    """
     df = load_panel()
 
     df = add_target(df)
@@ -254,9 +304,9 @@ def build_dataset() -> pd.DataFrame:
     df = add_fundamental_features(df)
     df = add_calendar_features(df)
 
-    # -------- mêmes features qu'avant --------
-    feature_cols = [
-        # Prix / technique
+    # --- Feature columns ---
+    feature_cols: List[str] = [
+        # Price / technical
         "ret_1d", "ret_5d", "ret_20d",
         "vol_20d", "vol_60d",
         "price_vs_ma10", "price_vs_ma50",
@@ -265,32 +315,31 @@ def build_dataset() -> pd.DataFrame:
         "macd_line", "macd_signal", "macd_hist",
         "volume_z",
 
-        # Fondamentaux simples
+        # Simple fundamentals
         "log_mktcap", "pe", "pb", "ps", "div_yield",
         "ebitda_to_mktcap", "price_pos_in_52w",
 
-        # Fondamentaux dérivés / value
+        # Derived / value-oriented fundamentals
         "earnings_yield", "book_to_price", "sales_to_price",
         "roe_proxy", "debt_to_equity_proxy", "eps_growth_proxy",
         "log_mktcap_sector_z", "pe_sector_z", "pb_sector_z",
         "ps_sector_z", "ebitda_mktcap_sector_z",
         "mktcap_rank", "pe_rank", "pb_rank", "value_rank",
 
-        # Effets calendaires
+        # Calendar effects
         "day_of_week", "month", "is_month_end", "is_quarter_end",
     ]
 
-    # Colonnes finales à garder
-    all_cols = [
+    # Columns to keep in the final ML dataset
+    all_cols: List[str] = [
         "Date", "Ticker",
         "ret_1d_ahead", "target_1d_top50", "target_1d_top10",
         "ret_5d_ahead", "target_5d_top50", "target_5d_top10",
     ] + feature_cols
 
-
     df = df[all_cols].copy()
 
-    # On enlève les lignes avec NaN dans les targets ou les features
+    # Drop rows with NaNs in targets or features
     df = df.dropna(
         subset=[
             "ret_1d_ahead", "target_1d_top50", "target_1d_top10",
@@ -298,15 +347,14 @@ def build_dataset() -> pd.DataFrame:
         ] + feature_cols
     )
 
-
-    OUT_DATA_FILE = Path("data/sp500_ml_dataset.parquet")
     OUT_DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(OUT_DATA_FILE, index=False)
 
-    print("✔️ Dataset ML sauvegardé :", OUT_DATA_FILE)
-    print("Shape final :", df.shape)
+    print(f"[INFO] ML dataset saved to: {OUT_DATA_FILE}")
+    print(f"[INFO] Final shape: {df.shape}")
 
     return df, feature_cols
+
 
 if __name__ == "__main__":
     build_dataset()

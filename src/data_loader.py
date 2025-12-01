@@ -1,16 +1,21 @@
 """
-Data loading & merging for S&P 500 project.
+Data loading & merging for the S&P 500 project.
 
-- Lit les prix journaliers (sp500_data.csv)
-- Lit les données "point in time" (sp500_pit_data.csv)
-- Nettoie un peu
-- Fusionne en un seul panel et sauvegarde en parquet
+This module:
+- loads daily prices (sp500_data.csv)
+- loads point-in-time fundamentals (sp500_pit_data.csv)
+- cleans both datasets
+- merges them into a single panel and saves it as a parquet file
 """
 
 from pathlib import Path
+from typing import Tuple
+
 import pandas as pd
 
-# Répertoires et fichiers
+# -------------------------------------------------------------------
+# Paths
+# -------------------------------------------------------------------
 DATA_RAW = Path("data/raw")
 DATA_PROCESSED = Path("data")
 
@@ -19,42 +24,71 @@ FUND_FILE = DATA_RAW / "sp500_pit_data.csv"
 PANEL_FILE = DATA_PROCESSED / "sp500_panel.parquet"
 
 
+# -------------------------------------------------------------------
+# Loading price data
+# -------------------------------------------------------------------
 def load_price_data(
     start_date: str = "2010-01-01",
     end_date: str = "2024-12-31",
 ) -> pd.DataFrame:
-    """Charge les prix quotidiens, filtre la période, enlève les doublons."""
+    """
+    Load daily price data, filter by date range and drop duplicates.
 
+    Parameters
+    ----------
+    start_date : str
+        First date to keep (YYYY-MM-DD).
+    end_date : str
+        Last date to keep (YYYY-MM-DD).
+
+    Returns
+    -------
+    pd.DataFrame
+        Cleaned daily price data sorted by (Ticker, Date).
+    """
     df = pd.read_csv(PRICE_FILE, parse_dates=["Date"])
 
-    # Filtre sur la période (tu pourras ajuster les dates plus tard)
+    # Filter by date interval
     mask = (df["Date"] >= start_date) & (df["Date"] <= end_date)
     df = df.loc[mask].copy()
 
-    # Tri & suppression des doublons (même Date/Ticker)
+    # Sort & remove duplicates (same Ticker/Date)
     df = df.sort_values(["Ticker", "Date"])
     df = df.drop_duplicates(subset=["Ticker", "Date"], keep="last")
 
     return df
 
 
+# -------------------------------------------------------------------
+# Loading point-in-time fundamentals
+# -------------------------------------------------------------------
 def load_fundamental_data() -> pd.DataFrame:
     """
-    Charge les données "point-in-time" et garde seulement les colonnes
-    réellement fondamentales (tout ce qui n’est pas prix classique).
-    Puis fait un forward-fill par Ticker.
-    """
+    Load point-in-time fundamentals and keep only truly fundamental columns.
 
+    Steps
+    -----
+    1. Read raw PIT file and sort by (Ticker, Date).
+    2. Remove duplicated (Ticker, Date) rows.
+    3. Keep only non-price columns as "fundamentals".
+    4. Forward-fill fundamentals through time within each Ticker.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with columns: Date, Ticker, <fundamental features>,
+        forward-filled over time.
+    """
     df = pd.read_csv(
-    FUND_FILE,
-    parse_dates=["Date"],
-    on_bad_lines="skip"  # ignore les lignes mal formées
-)
+        FUND_FILE,
+        parse_dates=["Date"],
+        on_bad_lines="skip",  # ignore malformed lines in the raw CSV
+    )
 
     df = df.sort_values(["Ticker", "Date"])
     df = df.drop_duplicates(subset=["Ticker", "Date"], keep="last")
 
-    # Colonnes de prix qu’on ne considère pas comme "fundamentals"
+    # Price-like columns that we do NOT treat as fundamentals
     price_like_cols = {
         "Date",
         "Ticker",
@@ -66,13 +100,13 @@ def load_fundamental_data() -> pd.DataFrame:
         "Volume",
     }
 
-    # Toutes les colonnes qui ne sont PAS des prix sont vues comme fondamentales
+    # Everything that is not price-like is considered a fundamental variable
     fundamental_cols = [c for c in df.columns if c not in price_like_cols]
 
-    # On garde Date, Ticker + fundamentals
+    # Keep Date, Ticker + fundamental columns
     df = df[["Date", "Ticker"] + fundamental_cols].copy()
 
-    # Forward-fill des fondamentaux dans le temps par Ticker
+    # Forward-fill fundamentals through time for each Ticker
     df = (
         df.set_index(["Ticker", "Date"])
         .groupby(level=0)
@@ -83,29 +117,41 @@ def load_fundamental_data() -> pd.DataFrame:
     return df
 
 
+# -------------------------------------------------------------------
+# Build the combined panel
+# -------------------------------------------------------------------
 def build_panel() -> pd.DataFrame:
-    """Construit le gros panel prix + fondamentaux et le sauvegarde en parquet."""
+    """
+    Build the full price + fundamentals panel and save it as parquet.
 
-    print("📥 Chargement des prix…")
+    The merge is done as a left join on (Ticker, Date): we keep all
+    price observations even if some fundamentals are missing.
+
+    Returns
+    -------
+    pd.DataFrame
+        Combined panel with prices and forward-filled fundamentals.
+    """
+    print("📥 Loading daily prices...")
     prices = load_price_data()
     print("   Prices shape:", prices.shape)
 
-    print("📥 Chargement des fondamentaux…")
+    print("📥 Loading point-in-time fundamentals...")
     funds = load_fundamental_data()
     print("   Fundamentals shape:", funds.shape)
 
-    print("🔗 Fusion prix + fondamentaux…")
+    print("🔗 Merging prices and fundamentals on (Ticker, Date)...")
     panel = pd.merge(
         prices,
         funds,
         on=["Ticker", "Date"],
-        how="left",  # on garde toutes les lignes de prix, même si pas de fondamentaux
+        how="left",  # keep all price rows even if fundamentals are missing
     )
 
     DATA_PROCESSED.mkdir(parents=True, exist_ok=True)
     panel.to_parquet(PANEL_FILE, index=False)
 
-    print("✅ Panel sauvegardé dans:", PANEL_FILE)
+    print("✅ Panel saved to:", PANEL_FILE)
     print("   Panel shape:", panel.shape)
     print(panel.head())
 
