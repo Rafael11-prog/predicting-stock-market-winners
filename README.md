@@ -65,6 +65,19 @@ Results (CSV + Plots)
 ---
 
 ## ▶️ How to Run
+## 📦 Data availability (Git LFS)
+
+Some raw datasets exceed GitHub’s file size limit and are stored using **Git Large File Storage (Git LFS)**.
+
+After cloning the repository, please run:
+
+```bash```
+git lfs install
+git lfs pull
+
+This will download the required raw datasets located in data/raw/.
+
+Without this step, the pipeline will not run correctly.
 
 Install dependencies:
 
