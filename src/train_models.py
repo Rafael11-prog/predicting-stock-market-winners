@@ -20,8 +20,13 @@ This script:
     * SHAP plots (optional, XGBoost only),
     * simple top-K backtest for XGBoost.
 
-Use FAST_DEV=True during development to reduce runtime,
-and set FAST_DEV=False for the final full run.
+Defaults are set for a FULL run (grading friendly).
+main.py can override the globals below for FAST runs.
+
+TARGETS BEHAVIOR (UPDATED):
+- DEFAULT: run ALL FOUR targets (Top50/Top10 for 1-day and 5-day horizons)
+- TOP50_ONLY=True: only next-day Top50 -> target_1d_top50
+- FAST_DEV=True: always processes only ONE target (the first one)
 """
 
 from pathlib import Path
@@ -30,7 +35,6 @@ from typing import Dict, List, Tuple, Optional
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import shap
 
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.inspection import permutation_importance
@@ -48,7 +52,6 @@ from sklearn.model_selection import TimeSeriesSplit, learning_curve
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
-shap.initjs()
 
 # XGBoost is optional
 try:
@@ -61,16 +64,19 @@ except ImportError:
 DATA_FILE = Path("data/sp500_ml_dataset.parquet")
 
 # -------------------------------------------------------------------
-# CONFIG
+# CONFIG (main.py can override these globals before calling main())
 # -------------------------------------------------------------------
-FAST_DEV: bool = True          # Set to False for the final full run
-DO_SHAP: bool = not FAST_DEV   # SHAP is expensive: only in full run
-DO_XGB: bool = not FAST_DEV    # XGBoost + SHAP are the most expensive
-N_SPLITS: int = 3 if FAST_DEV else 5
+FAST_DEV: bool = False          # FULL by default
+DO_SHAP: bool = False           # OFF by default (too slow for grading)
+DO_XGB: bool = True             # ON by default
+N_SPLITS: int = 3               # FULL = 3 folds by default
 
-# Subsample rows in development mode to speed up experiments
-MAX_ROWS: Optional[int] = 150_000 if FAST_DEV else None
+# NEW: by default we run ALL targets (main results).
+# main.py can set TOP50_ONLY=True to run only the single Top50 target.
+TOP50_ONLY: bool = False
 
+# Subsample rows in FAST mode (main.py can set this)
+MAX_ROWS: Optional[int] = None
 
 # -------------------------------------------------------------------
 # Helpers: dataset loading
@@ -120,23 +126,7 @@ def load_ml_dataset() -> Tuple[pd.DataFrame, List[str]]:
 # Metrics & evaluation helpers
 # -------------------------------------------------------------------
 def precision_at_k(y_true: np.ndarray, scores: np.ndarray, k: float = 0.1) -> float:
-    """
-    Precision@K: fraction of true positives among the top k% scores.
-
-    Parameters
-    ----------
-    y_true : array-like
-        True binary labels in {0,1}.
-    scores : array-like
-        Continuous model scores (higher = more likely to be class 1).
-    k : float, default=0.1
-        Fraction of the sample to keep (0.1 = top 10%).
-
-    Returns
-    -------
-    float
-        Precision in the top k% of scores.
-    """
+    """Precision@K: fraction of true positives among the top k% scores."""
     scores = np.asarray(scores)
     y_true = np.asarray(y_true)
 
@@ -152,18 +142,7 @@ def evaluate_model(
     y_scores: np.ndarray,
     y_pred: np.ndarray,
 ) -> Dict[str, float]:
-    """
-    Compute classification metrics and print a short report.
-
-    Metrics:
-    - Accuracy
-    - ROC AUC
-    - PR AUC
-    - Precision@10%
-    - Precision@20%
-
-    Returns a dict suitable for building a CV results DataFrame.
-    """
+    """Compute classification metrics and print a short report."""
     acc = accuracy_score(y_true, y_pred)
 
     try:
@@ -188,7 +167,7 @@ def evaluate_model(
     print("\nClassification report:")
     print(classification_report(y_true, y_pred, digits=3))
 
-    metrics = {
+    return {
         "model": name,
         "accuracy": acc,
         "roc_auc": roc,
@@ -196,7 +175,6 @@ def evaluate_model(
         "precision_at_10": p_at_10,
         "precision_at_20": p_at_20,
     }
-    return metrics
 
 
 # -------------------------------------------------------------------
@@ -208,9 +186,7 @@ def save_confusion_matrix(
     model_name: str,
     horizon_label: str,
 ) -> None:
-    """
-    Save a normalized confusion matrix (% per row) as PNG in results/.
-    """
+    """Save a normalized confusion matrix (% per row) as PNG in results/."""
     cm = confusion_matrix(y_true, y_pred, labels=[0, 1])
     cm_norm = cm / cm.sum(axis=1, keepdims=True)
 
@@ -225,16 +201,12 @@ def save_confusion_matrix(
     ax.set_xticklabels(["0", "1"])
     ax.set_yticklabels(["0", "1"])
 
-    # Display values inside the cells
     for i in range(2):
         for j in range(2):
             val = cm_norm[i, j]
             ax.text(
-                j,
-                i,
-                f"{val:.2f}",
-                ha="center",
-                va="center",
+                j, i, f"{val:.2f}",
+                ha="center", va="center",
                 color="black" if val < 0.5 else "white",
                 fontsize=10,
             )
@@ -257,9 +229,7 @@ def save_xgb_feature_importance(
     horizon_label: str,
     top_n: int = 20,
 ) -> None:
-    """
-    Save a horizontal bar plot of the top N XGBoost feature importances.
-    """
+    """Save a horizontal bar plot of the top N XGBoost feature importances."""
     importances = model.feature_importances_
 
     idx = np.argsort(importances)[::-1][:top_n]
@@ -292,12 +262,12 @@ def save_shap_plots(
     top_dep: int = 3,
 ) -> None:
     """
-    Generate and save SHAP plots for a tree-based model (XGBoost):
-
-    - SHAP summary plot
-    - SHAP bar plot (mean |SHAP|)
-    - SHAP dependence plots for the top top_dep features
+    Generate and save SHAP plots for XGBoost.
+    Lazy-import shap so that the project still runs without SHAP installed
+    when DO_SHAP=False.
     """
+    import shap  # lazy import
+
     # Subsample to avoid memory explosion
     if X_test.shape[0] > max_samples:
         rng = np.random.RandomState(42)
@@ -309,7 +279,6 @@ def save_shap_plots(
     explainer = shap.TreeExplainer(model)
     shap_values = explainer.shap_values(X_sample)
 
-    # For binary models, shap_values may be a list [class0, class1]
     if isinstance(shap_values, list):
         shap_vals = shap_values[1]
     else:
@@ -318,7 +287,6 @@ def save_shap_plots(
     out_dir = Path("results")
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # 1) SHAP summary plot
     fname1 = out_dir / f"shap_summary_{horizon_label.replace(' ', '_')}.png"
     shap.summary_plot(shap_vals, X_sample, feature_names=feature_names, show=False)
     plt.tight_layout()
@@ -326,21 +294,15 @@ def save_shap_plots(
     plt.close()
     print(f"   ➜ SHAP summary plot saved to: {fname1}")
 
-    # 2) SHAP bar plot (mean |SHAP|)
     fname2 = out_dir / f"shap_bar_{horizon_label.replace(' ', '_')}.png"
     shap.summary_plot(
-        shap_vals,
-        X_sample,
-        feature_names=feature_names,
-        plot_type="bar",
-        show=False,
+        shap_vals, X_sample, feature_names=feature_names, plot_type="bar", show=False
     )
     plt.tight_layout()
     plt.savefig(fname2, dpi=150, bbox_inches="tight")
     plt.close()
     print(f"   ➜ SHAP bar plot saved to: {fname2}")
 
-    # 3) SHAP dependence plots for top features
     mean_abs_shap = np.abs(shap_vals).mean(axis=0)
     top_idx = np.argsort(mean_abs_shap)[::-1][:top_dep]
 
@@ -349,13 +311,8 @@ def save_shap_plots(
         fname_dep = out_dir / (
             f"shap_dependence_{feat_name}_{horizon_label.replace(' ', '_')}.png"
         )
-
         shap.dependence_plot(
-            feat_name,
-            shap_vals,
-            X_sample,
-            feature_names=feature_names,
-            show=False,
+            feat_name, shap_vals, X_sample, feature_names=feature_names, show=False
         )
         plt.tight_layout()
         plt.savefig(fname_dep, dpi=150, bbox_inches="tight")
@@ -369,11 +326,7 @@ def save_roc_pr_curves(
     model_name: str,
     horizon_label: str,
 ) -> None:
-    """
-    Save a figure with:
-    - ROC curve
-    - Precision-Recall curve
-    """
+    """Save ROC + Precision-Recall curves."""
     fpr, tpr, _ = roc_curve(y_true, y_scores)
     prec, rec, _ = precision_recall_curve(y_true, y_scores)
 
@@ -382,7 +335,6 @@ def save_roc_pr_curves(
 
     fig, axes = plt.subplots(1, 2, figsize=(10, 4))
 
-    # ROC
     axes[0].plot(fpr, tpr, label="ROC")
     axes[0].plot([0, 1], [0, 1], "--", color="grey", label="Random")
     axes[0].set_xlabel("False Positive Rate")
@@ -390,7 +342,6 @@ def save_roc_pr_curves(
     axes[0].set_title(f"ROC - {model_name}\n{horizon_label}")
     axes[0].legend()
 
-    # PR
     axes[1].plot(rec, prec, label="PR curve")
     axes[1].set_xlabel("Recall")
     axes[1].set_ylabel("Precision")
@@ -411,9 +362,7 @@ def save_precision_at_k_curve(
     model_name: str,
     horizon_label: str,
 ) -> None:
-    """
-    Save Precision@K curve for K between 1% and 30%.
-    """
+    """Save Precision@K curve for K between 1% and 30%."""
     ks = np.linspace(0.01, 0.30, 30)
     precs: List[float] = []
 
@@ -455,10 +404,7 @@ def save_permutation_importance(
     model_name: str,
     n_repeats: int = 5,
 ) -> None:
-    """
-    Compute and plot permutation importance for a fitted model
-    (Random Forest or Logistic Regression) on the last fold.
-    """
+    """Permutation importance on the last fold."""
     print(f"\n   🔧 Permutation importance for {model_name}...")
     result = permutation_importance(
         model,
@@ -498,17 +444,14 @@ def save_learning_curve(
     horizon_label: str,
     model_name: str,
 ) -> None:
-    """
-    Compute and plot a learning curve (train_size vs ROC AUC)
-    for Logistic Regression / Random Forest.
-    """
+    """Learning curve for LR/RF (only run in FULL mode)."""
     print(f"\n   🔧 Learning curve for {model_name}...")
     train_sizes, train_scores, val_scores = learning_curve(
         estimator,
         X_train,
         y_train,
         cv=3,
-        shuffle=False,   # keep time ordering
+        shuffle=False,
         scoring="roc_auc",
         n_jobs=-1,
         train_sizes=np.linspace(0.1, 1.0, 5),
@@ -544,22 +487,7 @@ def backtest_top_k(
     ret_ahead_test: np.ndarray,
     top_k: float = 0.10,
 ) -> Tuple[float, float]:
-    """
-    Very simple cross-sectional backtest:
-
-    - sort all stocks by predicted score (descending),
-    - buy the top_k fraction of names,
-    - compute the mean forward return of:
-        * the strategy (top_k),
-        * the cross-sectional market average.
-
-    Returns
-    -------
-    strat_ret : float
-        Mean return of the top_k strategy.
-    mkt_ret : float
-        Mean return of the cross-sectional average.
-    """
+    """Simple cross-sectional top-K backtest."""
     scores = np.asarray(scores)
     ret_ahead_test = np.asarray(ret_ahead_test)
 
@@ -569,7 +497,6 @@ def backtest_top_k(
 
     strat_ret = float(np.nanmean(ret_ahead_test[top_idx]))
     mkt_ret = float(np.nanmean(ret_ahead_test))
-
     return strat_ret, mkt_ret
 
 
@@ -577,28 +504,42 @@ def backtest_top_k(
 # Main training loop
 # -------------------------------------------------------------------
 def main() -> None:
+    print(
+        f"[CONFIG] FAST_DEV={FAST_DEV} | TOP50_ONLY={TOP50_ONLY} | "
+        f"DO_XGB={DO_XGB} | DO_SHAP={DO_SHAP} | N_SPLITS={N_SPLITS}"
+    )
+
     df, feature_cols = load_ml_dataset()
 
-    # For backtest choice of horizon
     ret_1d_all = df["ret_1d"].values
     ret_1d_ahead_all = df["ret_1d_ahead"].values
     ret_5d_ahead_all = df["ret_5d_ahead"].values
     dates = df["Date"].values
 
-    # Targets (full list)
-    targets_full: List[Tuple[str, str]] = [
+    # -------------------------------
+    # Targets selection (UPDATED)
+    # -------------------------------
+    targets_all: List[Tuple[str, str]] = [
         ("target_1d_top50", "HORIZON_1_DAY_Top50"),
         ("target_1d_top10", "HORIZON_1_DAY_Top10"),
         ("target_5d_top50", "HORIZON_5_DAYS_Top50"),
         ("target_5d_top10", "HORIZON_5_DAYS_Top10"),
     ]
 
+    # Default behavior: run ALL targets (main results)
+    targets: List[Tuple[str, str]] = targets_all.copy()
+
+    # Optional behavior: run ONLY the Top50 (quick run)
+    if TOP50_ONLY:
+        targets = [targets_all[0]]
+
+    # FAST_DEV: always keep only the first target (even if TOP50_ONLY=False)
     if FAST_DEV:
-        targets = [targets_full[0]]  # e.g. only 1D Top 50% in dev
+        targets = [targets[0]]
         print("[FAST_DEV] Only processing target:", targets)
     else:
-        targets = targets_full
-        print("[FULL RUN] All targets will be processed.")
+        mode = "TOP50_ONLY" if TOP50_ONLY else "ALL_TARGETS"
+        print(f"[{mode} RUN] Targets processed:", targets)
 
     X_all = df[feature_cols].values
     tscv = TimeSeriesSplit(n_splits=N_SPLITS)
@@ -631,26 +572,17 @@ def main() -> None:
             X_train, X_test = X_all[train_idx], X_all[test_idx]
             y_train, y_test = y_all[train_idx], y_all[test_idx]
 
-            # Choose the correct forward return horizon for backtesting
             if "1d" in target_col:
                 ret_ahead_test = ret_1d_ahead_all[test_idx]
             else:
                 ret_ahead_test = ret_5d_ahead_all[test_idx]
 
-            # ------------------------------------------------------
-            # 1) Logistic Regression (with StandardScaler)
-            # ------------------------------------------------------
+            # 1) Logistic Regression
             print("\n🔹 Training Logistic Regression...")
             logreg_clf = Pipeline(
                 steps=[
                     ("scaler", StandardScaler()),
-                    (
-                        "clf",
-                        LogisticRegression(
-                            max_iter=1000,
-                            n_jobs=-1,
-                        ),
-                    ),
+                    ("clf", LogisticRegression(max_iter=1000, n_jobs=-1)),
                 ]
             )
             logreg_clf.fit(X_train, y_train)
@@ -662,7 +594,6 @@ def main() -> None:
             res_lr["target"] = label
             all_results.append(res_lr)
 
-            # Confusion matrix + advanced plots only on last fold
             if fold == tscv.n_splits:
                 save_confusion_matrix(y_test, logreg_pred, "Logistic_Regression", label)
                 if not FAST_DEV:
@@ -671,9 +602,7 @@ def main() -> None:
                         logreg_clf, X_test, y_test, feature_cols, label, "Logistic_Regression"
                     )
 
-            # ------------------------------------------------------
             # 2) Random Forest
-            # ------------------------------------------------------
             print("\n🔹 Training Random Forest...")
             rf_clf = RandomForestClassifier(
                 n_estimators=200,
@@ -698,12 +627,7 @@ def main() -> None:
                         rf_clf, X_test, y_test, feature_cols, label, "Random_Forest"
                     )
 
-            # ------------------------------------------------------
-            # 3) XGBoost (optional in dev)
-            # ------------------------------------------------------
-            xgb_scores = None
-            xgb_clf = None
-
+            # 3) XGBoost
             if DO_XGB and (XGBClassifier is not None):
                 print("\n🔹 Training XGBoost...")
                 max_train = 300_000
@@ -741,13 +665,14 @@ def main() -> None:
                     save_confusion_matrix(y_test, xgb_pred, "XGBoost", label)
                     save_xgb_feature_importance(xgb_clf, feature_cols, label, top_n=20)
 
+                    # Always save ROC/PR + Precision@K (useful + not too slow)
+                    save_roc_pr_curves(y_test, xgb_scores, "XGBoost", label)
+                    save_precision_at_k_curve(y_test, xgb_scores, "XGBoost", label)
+
                     if DO_SHAP:
                         print("\n   🔍 SHAP analysis (sample) on last fold...")
                         save_shap_plots(xgb_clf, X_test, feature_cols, label)
-                        save_roc_pr_curves(y_test, xgb_scores, "XGBoost", label)
-                        save_precision_at_k_curve(y_test, xgb_scores, "XGBoost", label)
 
-                    # Simple top-10% backtest on last fold
                     strat_ret, mkt_ret = backtest_top_k(xgb_scores, ret_ahead_test, top_k=0.10)
                     backtest_rows.append(
                         {
@@ -764,9 +689,7 @@ def main() -> None:
                         f"strat_ret={strat_ret:.4f}, mkt_ret={mkt_ret:.4f}"
                     )
 
-            # ------------------------------------------------------
-            # 4) Baseline 1: Random scores
-            # ------------------------------------------------------
+            # Baseline 1: Random
             print("\n🔹 Baseline: Random...")
             rng = np.random.RandomState(123 + fold)
             rand_scores = rng.rand(len(y_test))
@@ -777,9 +700,7 @@ def main() -> None:
             res_rand["target"] = label
             all_results.append(res_rand)
 
-            # ------------------------------------------------------
-            # 5) Baseline 2: Naive momentum (sign of 1-day return)
-            # ------------------------------------------------------
+            # Baseline 2: Naive momentum
             print("\n🔹 Baseline: Naive momentum (ret_1d > 0)...")
             mom_scores = ret_1d_all[test_idx]
             mom_pred = (mom_scores > 0).astype(int)
@@ -789,9 +710,7 @@ def main() -> None:
             res_mom["target"] = label
             all_results.append(res_mom)
 
-            # ------------------------------------------------------
-            # 6) Baseline 3: Buy & Hold (always long)
-            # ------------------------------------------------------
+            # Baseline 3: Buy & Hold
             print("\n🔹 Baseline: Buy & Hold (always 1)...")
             bh_scores = np.ones(len(y_test))
             bh_pred = np.ones(len(y_test), dtype=int)
@@ -801,9 +720,7 @@ def main() -> None:
             res_bh["target"] = label
             all_results.append(res_bh)
 
-        # ==========================================================
-        # Cross-validation summary: mean + std by model
-        # ==========================================================
+        # CV summary
         results_df = pd.DataFrame(all_results)
         print("\n===== CV SUMMARY (TimeSeriesSplit) for", label, "=====")
 
@@ -816,7 +733,6 @@ def main() -> None:
         )
         print(summary)
 
-        # Save raw CV results & aggregated summary
         out_dir = Path("results")
         out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -827,7 +743,6 @@ def main() -> None:
         print(f"\n   💾 Raw results saved to: {raw_path}")
         print(f"   💾 CV summary saved to: {cv_path}")
 
-        # Save backtest results if any
         if backtest_rows:
             backtest_df = pd.DataFrame(backtest_rows)
             bt_path = out_dir / f"backtest_{label}.csv"

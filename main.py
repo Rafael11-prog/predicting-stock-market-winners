@@ -4,35 +4,40 @@ Main entry point for the project.
 This script orchestrates the full pipeline:
 
 1. Build the raw panel of daily prices + point-in-time fundamentals
-   -> src/data_loader.build_panel()
+   -> src.data_loader.build_panel()
 
 2. Clean the panel (drop *_y columns, forward-fill fundamentals)
-   -> src/prepare_dataset.clean_panel()
+   -> src.prepare_dataset.clean_panel()
 
 3. Merge with cross-sectional fundamentals from Kaggle
-   -> src/add_fundamentals.merge_panel_and_fundamentals()
+   -> src.add_fundamentals.merge_panel_and_fundamentals()
 
 4. Build the final ML dataset (features + targets)
-   -> src/build_ml_dataset.build_dataset()
+   -> src.build_ml_dataset.build_dataset()
 
 5. Train and evaluate ML models
-   -> src/train_models.main()
+   -> src.train_models.main()
 
 Usage
 -----
-Fast development run (small, quick):
-
+Main results (default: ALL targets):
     python main.py
 
-Full run (all targets, full dataset, XGBoost + SHAP, etc.):
+Top50 only (single target):
+    python main.py --top50
 
-    python main.py --full
+FAST development run (quick sanity check):
+    python main.py --fast
 
-You can also run only parts of the pipeline, e.g.:
+FULL run + SHAP (slow):
+    python main.py --shap
 
-    python main.py --stage data
-    python main.py --stage features
-    python main.py --stage train --full
+Notes
+-----
+- By default, `python main.py` evaluates all four targets:
+  Top50/Top10 for 1-day and 5-day horizons.
+- `--top50` restricts evaluation to the single next-day Top50 target.
+- `--fast` always processes a single target and runs a lightweight configuration.
 """
 
 from __future__ import annotations
@@ -40,7 +45,6 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-# Import project modules
 from src.data_loader import build_panel
 from src.prepare_dataset import load_panel, clean_panel, save_clean
 from src.add_fundamentals import merge_panel_and_fundamentals
@@ -100,7 +104,7 @@ def run_build_ml_dataset() -> None:
     build_dataset()
 
 
-def run_training(fast_dev: bool) -> None:
+def run_training(fast_dev: bool, do_shap: bool, top50_only: bool) -> None:
     """
     Stage 5: train and evaluate models.
 
@@ -108,18 +112,27 @@ def run_training(fast_dev: bool) -> None:
     in src.train_models *before* calling train_models.main().
     """
     if fast_dev:
-        print("⚙️  Running in FAST_DEV mode (quick sanity check run).")
+        print("⚙️  Running FAST mode (quick sanity check run).")
     else:
-        print("⚙️  Running FULL training (all targets, full data, XGBoost + SHAP).")
+        print("⚙️  Running FULL mode (main results by default).")
 
     # Configure the training module programmatically
     train_models_module.FAST_DEV = fast_dev
-    train_models_module.DO_SHAP = not fast_dev
-    train_models_module.DO_XGB = not fast_dev
-    train_models_module.N_SPLITS = 3 if fast_dev else 5
-    train_models_module.MAX_ROWS = 150_000 if fast_dev else None
+    train_models_module.TOP50_ONLY = top50_only
 
-    # Call the existing main() in train_models.py
+    if fast_dev:
+        # FAST: keep it light
+        train_models_module.DO_SHAP = False
+        train_models_module.DO_XGB = False
+        train_models_module.N_SPLITS = 2
+        train_models_module.MAX_ROWS = 150_000
+    else:
+        # FULL: 3 folds, XGB ON, SHAP OFF unless --shap
+        train_models_module.DO_SHAP = do_shap
+        train_models_module.DO_XGB = True
+        train_models_module.N_SPLITS = 3
+        train_models_module.MAX_ROWS = None
+
     train_models_module.main()
 
 
@@ -147,19 +160,36 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
-        "--full",
+        "--fast",
         action="store_true",
-        help="Run full training instead of FAST_DEV quick run.",
+        help="Run FAST mode (2 folds, subsample, no XGB, no SHAP; single target).",
     )
 
-    return parser.parse_args()
+    parser.add_argument(
+        "--shap",
+        action="store_true",
+        help="Enable SHAP (FULL mode only; slow).",
+    )
+
+    parser.add_argument(
+        "--top50",
+        action="store_true",
+        help="Evaluate only the single next-day Top50 target (target_1d_top50).",
+    )
+
+    args = parser.parse_args()
+
+    # Safety: in FAST mode, TOP50_ONLY doesn't matter because FAST_DEV already forces 1 target.
+    if args.fast and args.shap:
+        print("⚠️  Note: --shap is ignored in --fast mode.")
+
+    return args
 
 
 def main() -> None:
     args = parse_args()
-    fast_dev = not args.full
+    fast_dev = args.fast
 
-    # Decide which stages to run
     if args.stage in ("all", "data"):
         run_build_panel()
 
@@ -173,7 +203,11 @@ def main() -> None:
         run_build_ml_dataset()
 
     if args.stage in ("all", "train"):
-        run_training(fast_dev=fast_dev)
+        run_training(
+            fast_dev=fast_dev,
+            do_shap=args.shap,
+            top50_only=args.top50,
+        )
 
 
 if __name__ == "__main__":

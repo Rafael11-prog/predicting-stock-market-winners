@@ -1,21 +1,27 @@
-# Fichiers système
-.DS_Store
-
-# Caches Python
-__pycache__/
-*.py[cod]
-*.pyo
-*.pyd
-
-# Checkpoints Jupyter
-**/.ipynb_checkpoints/
-
-# Données brutes et datasets lourds
-data/raw/
-data/*.parquet
-
-# Résultats (plots, SHAP, etc.)
+# Results (always excluded)
 results/
 
-# Fichiers système
+# Generated datasets (rebuildable)
+data/*.parquet
+data/**/*.parquet
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Virtual environments
+.venv/
+venv/
+
+# OS files
 .DS_Store
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Logs
+*.log
+# Cache / downloads (do not commit)
+data/raw/sp500_cache/
+data/raw/*.zip
+data/raw/**/*.zip
